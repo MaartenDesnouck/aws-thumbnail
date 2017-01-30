@@ -10,7 +10,7 @@ Resources:
   CreateThumbnail:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: CreateThumbnail.handler
+      Handler: CreateThumbnailPdf.handler
       Runtime: nodejs4.3
       CodeUri: ./
       Policies: AmazonS3FullAccess
