@@ -6,7 +6,6 @@ var gm = require("gm").subClass({
 var fs = require("fs");
 var mktemp = require("mktemp");
 
-var THUMB_KEY_PREFIX = "thumbnails/";
 var THUMB_WIDTH = 150;
 var THUMB_HEIGHT = 150;
 var ALLOWED_FILETYPES = ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'pdf', 'gif'];
@@ -22,17 +21,12 @@ var s3 = new AWS.S3();
 exports.handler = function(event, context) {
     var srcBucket = event.Records[0].s3.bucket.name;
     var srcKey = utils.decodeKey(event.Records[0].s3.object.key);
-    var dstKey = srcKey.replace(/\.\w+$/, ".png");
     var fileType = srcKey.match(/\.\w+$/);
     var dstBucket = srcBucket + "resized";
 
     // Sanity check: validate that source and destination are different buckets.
     if (srcBucket == dstBucket) {
         callback("Source and destination buckets are the same.");
-        return;
-    }
-
-    if (srcKey.indexOf(THUMB_KEY_PREFIX) === 0) {
         return;
     }
 
@@ -74,15 +68,12 @@ exports.handler = function(event, context) {
                 }
 
                 image.size(function(err, size) {
-                    /*
-                     * scalingFactor should be calculated to fit either the width or the height
-                     * within 150x150 optimally, keeping the aspect ratio. Additionally, if the image
-                     * is smaller than 150px in both dimensions, keep the original image size and just
-                     * convert to png for the thumbnail's display
-                     */
                     var scalingFactor = Math.min(1, THUMB_WIDTH / size.width, THUMB_HEIGHT / size.height),
                         width = scalingFactor * size.width,
                         height = scalingFactor * size.height;
+
+                    var dstKeyExt = '-' + width + 'x' + height + '.png';
+                    var dstKey = srcKey.replace(/\.\w+$/, dstKeyExt);
 
                     this.resize(width, height)
                         .toBuffer("png", function(err, buffer) {
@@ -105,7 +96,6 @@ exports.handler = function(event, context) {
                     Key: dstKey,
                     Body: data,
                     ContentType: "image/png",
-                    ACL: 'public-read',
                     Metadata: {
                         thumbnail: 'TRUE'
                     }
