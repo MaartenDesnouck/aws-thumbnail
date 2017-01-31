@@ -3,7 +3,7 @@ phases:
   install:
     commands:
       - npm install async path tmp fs
-      - aws cloudformation package --template-file samTemplate.yaml --s3-bucket lambdapipeline
+      - aws cloudformation package --template-file samTemplate.yaml --s3-bucket codepipeline-us-west-2-269110564315
                                    --output-template-file NewSamTemplate.yaml
 artifacts:
   type: zip
