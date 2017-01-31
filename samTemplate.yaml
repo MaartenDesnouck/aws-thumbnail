@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: A function is triggered off an upload to a bucket. It creates a thumbnail of the first pdf-page.
+Description: A function is triggered off an upload to a bucket. It creates a thumbnail of the file.
 Resources:
   desnouckuploads:
     Type: AWS::S3::Bucket
@@ -10,7 +10,7 @@ Resources:
   CreateThumbnail:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: CreateThumbnailPdf.handler
+      Handler: CreateThumbnail.handler
       Runtime: nodejs4.3
       CodeUri: ./
       Policies: AmazonS3FullAccess
@@ -22,9 +22,3 @@ Resources:
           Properties:
             Bucket: !Ref desnouckuploads
             Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  -
-                    Name: suffix
-                    Value: pdf
