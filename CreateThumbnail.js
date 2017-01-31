@@ -23,6 +23,7 @@ exports.handler = function(event, context) {
     var srcKey = utils.decodeKey(event.Records[0].s3.object.key);
     var fileType = srcKey.match(/\.\w+$/);
     var dstBucket = srcBucket + "resized";
+    var dstKey = '';
 
     // Sanity check: validate that source and destination are different buckets.
     if (srcBucket == dstBucket) {
@@ -73,7 +74,7 @@ exports.handler = function(event, context) {
                         height = scalingFactor * size.height;
 
                     var dstKeyExt = '-' + width + 'x' + height + '.png';
-                    var dstKey = srcKey.replace(/\.\w+$/, dstKeyExt);
+                    dstKey = srcKey.replace(/\.\w+$/, dstKeyExt);
 
                     this.resize(width, height)
                         .toBuffer("png", function(err, buffer) {
