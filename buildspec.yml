@@ -2,7 +2,7 @@ version: 0.1
 phases:
   install:
     commands:
-      - npm install async path tmp fs
+      - npm install async gm mktemp
       - aws cloudformation package --template-file samTemplate.yaml --s3-bucket codepipeline-us-west-2-269110564315
                                    --output-template-file NewSamTemplate.yaml
 artifacts:

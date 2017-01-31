@@ -1,109 +1,119 @@
-// get reference to S3 client
-var async = require('async');
-var AWS = require('aws-sdk');
-var path = require('path');
-var makePdfThumbnail = require('./process.js');
-var util = require('util');
-var tmp = require('tmp');
-var fs = require('fs');
+var async = require("async");
+var AWS = require("aws-sdk");
+var gm = require("gm").subClass({imageMagick: true});
+var fs = require("fs");
+var mktemp = require("mktemp");
 
-// get reference to S3 client
+var THUMB_KEY_PREFIX = "thumbnails/",
+    THUMB_WIDTH = 150,
+    THUMB_HEIGHT = 150,
+    ALLOWED_FILETYPES = ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'pdf', 'gif'];
+
+var utils = {
+  decodeKey: function(key) {
+    return decodeURIComponent(key).replace(/\+/g, ' ');
+  }
+};
+
 var s3 = new AWS.S3();
 
-/* This function creates a thumbnail from a pdf.
- * The source bucket and key, and destiny bucket and key must be specified of s3 must be specified.
- */
-exports.handler = function(event, context, callback) {
-    // Read options from the event.
-    console.log("Reading options from event:\n", util.inspect(event, {
-        depth: 5
-    }));
-    var srcBucket = event.Records[0].s3.bucket.name;
-    // Object key may have spaces or unicode non-ASCII characters.
-    var srcKey =
-        decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " "));
-    var dstBucket = srcBucket + "resized";
-    var dstKey = "pdfthumbnail-" + srcKey + ".png";
+exports.handler = function(event, context) {
+  var bucket = event.Records[0].s3.bucket.name,
+  srcKey = utils.decodeKey(event.Records[0].s3.object.key),
+  dstKey = THUMB_KEY_PREFIX + srcKey.replace(/\.\w+$/, ".png"),
+  fileType = srcKey.match(/\.\w+$/);
 
-    // Sanity check: validate that source and destination are different buckets.
-    if (srcBucket == dstBucket) {
-        console.log("Source and destination buckets are the same.");
-        return;
-    }
+  if(srcKey.indexOf(THUMB_KEY_PREFIX) === 0) {
+    return;
+  }
 
-    // Infer the image type.
-    var typeMatch = srcKey.match(/\.([^.]*)$/);
-    if (!typeMatch) {
-        console.error(
-            'Unable to infer document type for key ' + srcKey
-        );
-        return;
-    }
+  if (fileType === null) {
+    console.error("Invalid filetype found for key: " + srcKey);
+    return;
+  }
 
-    var imageType = typeMatch[1];
-    if (imageType !== 'pdf') {
-        console.error(
-            'Skipping non-pdf ' + srcKey
-        );
-        return;
-    }
+  fileType = fileType[0].substr(1);
 
-    // Download the image from S3, transform, and upload to a different S3 bucket.
-    async.waterfall([
-        function downloadAndTransform(next) {
-            var request = s3.getObject({
-                Bucket: srcBucket,
-                Key: srcKey
-            });
+  if (ALLOWED_FILETYPES.indexOf(fileType) === -1) {
+    console.error("Filetype " + fileType + " not valid for thumbnail, exiting");
+    return;
+  }
 
-            try {
-                var pdfStream = request.createReadStream();
-            } catch (e) {
-                return next(e);
-            }
-            tmp.file(function(err, path) {
-                if (err) {
-                    next(err);
-                    return;
-                }
+  async.waterfall([
 
-                makePdfThumbnail.fromStreamToFile(pdfStream, path, resolution, function(err, tmpfilename) {
-                    if (err) {
-                        next(err);
-                        return;
-                    }
-                    next(null, 'image/png', tmpfilename);
-                });
-            });
-        },
-        function upload(contentType, tmpfilename, next) {
-            // Stream the transformed image to a different S3 bucket.
-            var tmpFileStream = fs.createReadStream(tmpfilename);
-            s3.upload({
-                    Bucket: dstBucket,
-                    Key: dstKey,
-                    Body: tmpFileStream,
-                    ContentType: contentType
-                },
-                next);
+    function download(next) {
+        //Download the image from S3
+        s3.getObject({
+          Bucket: bucket,
+          Key: srcKey
+        }, next);
+      },
+
+      function createThumbnail(response, next) {
+        var temp_file, image;
+
+        if(fileType === "pdf") {
+          temp_file = mktemp.createFileSync("/tmp/XXXXXXXXXX.pdf")
+          fs.writeFileSync(temp_file, response.Body);
+          image = gm(temp_file + "[0]");
+        } else if (fileType === 'gif') {
+          temp_file = mktemp.createFileSync("/tmp/XXXXXXXXXX.gif")
+          fs.writeFileSync(temp_file, response.Body);
+          image = gm(temp_file + "[0]");
+        } else {
+          image = gm(response.Body);
         }
-    ], function(err, keys) {
+
+        image.size(function(err, size) {
+          /*
+           * scalingFactor should be calculated to fit either the width or the height
+           * within 150x150 optimally, keeping the aspect ratio. Additionally, if the image
+           * is smaller than 150px in both dimensions, keep the original image size and just
+           * convert to png for the thumbnail's display
+           */
+          var scalingFactor = Math.min(1, THUMB_WIDTH / size.width, THUMB_HEIGHT / size.height),
+          width = scalingFactor * size.width,
+          height = scalingFactor * size.height;
+
+          this.resize(width, height)
+          .toBuffer("png", function(err, buffer) {
+            if(temp_file) {
+              fs.unlinkSync(temp_file);
+            }
+
+            if (err) {
+              next(err);
+            } else {
+              next(null, response.contentType, buffer);
+            }
+          });
+        });
+      },
+
+      function uploadThumbnail(contentType, data, next) {
+        s3.putObject({
+          Bucket: bucket,
+          Key: dstKey,
+          Body: data,
+          ContentType: "image/png",
+          ACL: 'public-read',
+          Metadata: {
+            thumbnail: 'TRUE'
+          }
+        }, next);
+      }
+
+      ],
+      function(err) {
         if (err) {
-            console.error(
-                'Unable to resize ' + srcKey + ' from ' + srcBucket +
-                ' and upload to ' + dstBucket + '/' +
-                ' due to an error: ' + util.inspect(err, {
-                    showHidden: false,
-                    depth: null
-                })
+          console.error(
+            "Unable to generate thumbnail for '" + bucket + "/" + srcKey + "'" +
+            " due to error: " + err
             );
         } else {
-            for (var i = 0; i < keys.length; i++) {
-                console.log(
-                    'Successfully resized ' + srcBucket + '/' + srcKey +
-                    ' and uploaded to ' + dstBucket + '/' + keys[i]
-                );
-            }
+          console.log("Created thumbnail for '" + bucket + "/" + srcKey + "'");
         }
-    });
+
+        context.done();
+      });
 };
