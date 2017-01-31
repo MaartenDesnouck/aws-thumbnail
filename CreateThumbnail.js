@@ -70,8 +70,8 @@ exports.handler = function(event, context) {
 
                 image.size(function(err, size) {
                     var scalingFactor = Math.min(1, THUMB_WIDTH / size.width, THUMB_HEIGHT / size.height),
-                        width = scalingFactor * size.width,
-                        height = scalingFactor * size.height;
+                        width = Math.round(scalingFactor * size.width),
+                        height = Math.round(scalingFactor * size.height);
 
                     var dstKeyExt = '-' + width + 'x' + height + '.png';
                     dstKey = srcKey.replace(/\.\w+$/, dstKeyExt);
