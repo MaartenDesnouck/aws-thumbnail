@@ -17,8 +17,8 @@ Resources:
       MemorySize: 256
       Timeout: 5
       Events:
-        PdfUpload:
-          Type: S3
+        SNS1:
+          Type: SNS
           Properties:
-            Bucket: !Ref desnouckuploads
-            Events: s3:ObjectCreated:*
+            Topic:
+              Ref: processPDF
