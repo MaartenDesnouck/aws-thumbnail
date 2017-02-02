@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: A function is when SNS message is posted. Processec page of the PDF. 
+Description: A function is when SNS message is posted. Processec page of the PDF.
 Resources:
-  CreateThumbnail:
+  PDFPageThumbnail:
     Type: AWS::Serverless::Function
     Properties:
       Handler: PDFPageThumbnail.handler
