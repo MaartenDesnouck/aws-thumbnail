@@ -1,69 +1,50 @@
-var async = require("async");
-var AWS = require("aws-sdk");
+var mktemp = require("mktemp");
 var gm = require("gm").subClass({
     imageMagick: true
 });
+var async = require("async");
+var AWS = require("aws-sdk");
 var fs = require("fs");
-var mktemp = require("mktemp");
 
 var THUMB_WIDTH = 150;
 var THUMB_HEIGHT = 150;
-var ALLOWED_FILETYPES = ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'pdf', 'gif'];
-
-var utils = {
-    decodeKey: function(key) {
-        return decodeURIComponent(key).replace(/\+/g, ' ');
-    }
-};
 
 var s3 = new AWS.S3();
 
-exports.handler = function(event, context) {
-    var srcBucket = event.Records[0].s3.bucket.name;
-    var srcKey = utils.decodeKey(event.Records[0].s3.object.key);
-    var fileType = srcKey.match(/\.\w+$/);
-    var dstBucket = srcBucket + "resized";
-    var dstKey = '';
+exports.handler = (event, context, callback) => {
+    var message = event['Records'][0]['Sns']['Message']
+    console.log(message);
 
-    // Sanity check: validate that source and destination are different buckets.
-    if (srcBucket == dstBucket) {
-        callback("Source and destination buckets are the same.");
-        return;
-    }
-
-    if (fileType === null) {
-        console.error("Invalid filetype found for key: " + srcKey);
-        return;
-    }
-
-    fileType = fileType[0].substr(1);
-
-    if (ALLOWED_FILETYPES.indexOf(fileType) === -1) {
-        console.error("Filetype " + fileType + " not valid for thumbnail, exiting");
-        return;
-    }
+    var page = message[''];
+    var srcBucket = message[''];
+    var dstBucket = 'desnouckuploadsresized';
+    var srcKey = message[''];
 
     async.waterfall([
-
             function download(next) {
-                //Download the image from S3
+                //Download the pdf from S3
                 s3.getObject({
                     Bucket: srcBucket,
                     Key: srcKey
                 }, next);
             },
-
+            function prepareTemp(response, next) {
+                if (fileType === "pdf") {
+                    temp_file = mktemp.createFileSync("/tmp/XXXXXXXXXX.pdf")
+                    fs.writeFileSync(temp_file, response.Body);
+                    next(null, temp_file);
+                } else {
+                    console.error("Filetype " + fileType + " not valid for this function, exiting");
+                    return;
+                }
+            },
             function createThumbnail(response, next) {
                 var temp_file, image;
 
                 if (fileType === "pdf") {
                     temp_file = mktemp.createFileSync("/tmp/XXXXXXXXXX.pdf")
                     fs.writeFileSync(temp_file, response.Body);
-                    image = gm(temp_file + "[0]");
-                } else if (fileType === 'gif') {
-                    temp_file = mktemp.createFileSync("/tmp/XXXXXXXXXX.gif")
-                    fs.writeFileSync(temp_file, response.Body);
-                    image = gm(temp_file + "[0]");
+                    image = gm(temp_file + "[" + page + "]");
                 } else {
                     image = gm(response.Body);
                 }
@@ -73,7 +54,7 @@ exports.handler = function(event, context) {
                         width = Math.round(scalingFactor * size.width),
                         height = Math.round(scalingFactor * size.height);
 
-                    var dstKeyExt = '-' + width + 'x' + height + '.png';
+                    var dstKeyExt = '-' + page + '-' + width + 'x' + height + '.png';
                     dstKey = srcKey.replace(/\.\w+$/, dstKeyExt);
 
                     this.resize(width, height)
@@ -90,7 +71,6 @@ exports.handler = function(event, context) {
                         });
                 });
             },
-
             function uploadThumbnail(contentType, data, next) {
                 s3.putObject({
                     Bucket: dstBucket,
@@ -107,11 +87,11 @@ exports.handler = function(event, context) {
         function(err) {
             if (err) {
                 console.error(
-                    "Unable to generate thumbnail for '" + srcBucket + "/" + srcKey + "'" +
+                    "Unable to generate thumbnails for '" + srcBucket + "/" + srcKey + "'" +
                     " due to error: " + err
                 );
             } else {
-                console.log("Created thumbnail for '" + srcBucket + "/" + srcKey + "'");
+                console.log("Created thumbnails for '" + srcBucket + "/" + srcKey + "'");
             }
 
             context.done();
