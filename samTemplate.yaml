@@ -11,9 +11,3 @@ Resources:
       Policies: AmazonS3FullAccess
       MemorySize: 256
       Timeout: 5
-      Events:
-        SNS1:
-          Type: SNS
-          Properties:
-            Topic:
-              Ref: processPDF
